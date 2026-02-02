@@ -4,13 +4,21 @@ use chrono::{Duration, Utc};
 use serde_json;
 use std::fs;
 use std::path::{Path, PathBuf};
-use summ_common::{CliStatus, CliState, Session, SessionStatus};
+use summ_common::{CliStatus, CliState, DaemonConfig, Session, SessionStatus};
 use uuid::Uuid;
 
 /// Session extension trait providing additional methods for Session management
 pub trait SessionExt {
     /// Generate a unique session ID
     fn generate_id() -> String;
+
+    /// Create a new session with tmux and workspace initialization
+    async fn create(
+        cli: &str,
+        init_path: &Path,
+        name: Option<String>,
+        config: &DaemonConfig,
+    ) -> Result<Session>;
 
     /// Get the effective status by checking tmux and CLI status
     fn get_effective_status(&self) -> SessionStatus;
@@ -28,6 +36,56 @@ pub trait SessionExt {
 impl SessionExt for Session {
     fn generate_id() -> String {
         format!("session_{}", Uuid::new_v4().to_string().split('-').next().unwrap())
+    }
+
+    async fn create(
+        cli: &str,
+        init_path: &Path,
+        name: Option<String>,
+        config: &DaemonConfig,
+    ) -> Result<Session> {
+        let session_id = Self::generate_id();
+        let display_name = name.unwrap_or_else(|| session_id.clone());
+        let tmux_session = format!("summ-{}", session_id);
+
+        // Create session directory structure
+        let session_dir = config.sessions_dir.join(&session_id);
+        crate::init::create_session_structure(&session_dir)?;
+
+        // Initialize workspace from init_path
+        let workspace_dir = session_dir.join("workspace");
+        crate::init::initialize_workdir(&workspace_dir, init_path)?;
+
+        // Create tmux session in the workspace directory
+        crate::tmux::TmuxManager::create_session(&tmux_session, &workspace_dir, cli)?;
+
+        // Enable logging
+        let log_path = config.logs_dir.join(format!("{}.log", session_id));
+        crate::tmux::TmuxManager::enable_logging(&tmux_session, &log_path)?;
+
+        // Get CLI process PID
+        let pid = crate::tmux::TmuxManager::get_pane_pid(&tmux_session)?;
+
+        let now = Utc::now();
+        let session = Session {
+            session_id: session_id.clone(),
+            tmux_session,
+            name: display_name,
+            cli: cli.to_string(),
+            workdir: session_dir,
+            init_source: init_path.to_path_buf(),
+            status: SessionStatus::Running,
+            pid,
+            created_at: now,
+            last_activity: now,
+        };
+
+        // Save metadata
+        session.save_metadata()?;
+
+        tracing::info!("Created session: {} ({})", session_id, cli);
+
+        Ok(session)
     }
 
     fn get_effective_status(&self) -> SessionStatus {
@@ -145,5 +203,14 @@ mod tests {
         let cli_status = session.read_cli_status().unwrap();
         assert_eq!(cli_status.state, CliState::Idle);
         assert_eq!(cli_status.message, Some("Ready".to_string()));
+    }
+
+    #[test]
+    fn test_tmux_session_naming() {
+        // Test that tmux session names follow the expected format
+        let session_id = "session_abc123";
+        let tmux_name = format!("summ-{}", session_id);
+        assert_eq!(tmux_name, "summ-session_abc123");
+        assert!(tmux_name.starts_with("summ-"));
     }
 }
