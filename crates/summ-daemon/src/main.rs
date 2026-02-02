@@ -1,3 +1,4 @@
+mod session;
 mod tmux;
 
 use anyhow::Result;
