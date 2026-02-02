@@ -13,6 +13,7 @@ use crate::session::SessionExt;
 use crate::tmux::TmuxManager;
 
 /// Handler manages session state and processes requests
+#[derive(Clone)]
 pub struct Handler {
     /// Map of session_id to Session
     sessions: Arc<RwLock<HashMap<String, Session>>>,
