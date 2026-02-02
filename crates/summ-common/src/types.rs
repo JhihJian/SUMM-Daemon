@@ -1,3 +1,4 @@
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -81,6 +82,39 @@ pub struct DaemonConfig {
     pub tmux_prefix: String,
 }
 
+impl DaemonConfig {
+    /// Load the daemon configuration and ensure all required directories exist
+    pub fn load() -> anyhow::Result<Self> {
+        let config = Self::default();
+        config.ensure_directories()?;
+        Ok(config)
+    }
+
+    /// Create all required directories for the daemon
+    pub fn ensure_directories(&self) -> anyhow::Result<()> {
+        std::fs::create_dir_all(&self.sessions_dir)
+            .context("Failed to create sessions directory")?;
+        std::fs::create_dir_all(&self.logs_dir)
+            .context("Failed to create logs directory")?;
+        Ok(())
+    }
+
+    /// Get the path to a session's meta.json file
+    pub fn session_meta_path(&self, session_id: &str) -> PathBuf {
+        self.sessions_dir.join(session_id).join("meta.json")
+    }
+
+    /// Get the path to a session's runtime status.json file
+    pub fn session_status_path(&self, session_id: &str) -> PathBuf {
+        self.sessions_dir.join(session_id).join("runtime").join("status.json")
+    }
+
+    /// Get the path to a session's workspace directory
+    pub fn session_workspace_path(&self, session_id: &str) -> PathBuf {
+        self.sessions_dir.join(session_id).join("workspace")
+    }
+}
+
 impl Default for DaemonConfig {
     fn default() -> Self {
         let home = dirs::home_dir().expect("HOME directory not found");
@@ -128,6 +162,7 @@ impl From<Session> for SessionInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_session_status_serialization() {
@@ -227,5 +262,41 @@ mod tests {
         assert!(json.contains(r#""state":"busy""#));
         assert!(!json.contains(r#""message""#));
         assert!(!json.contains(r#""event""#));
+    }
+
+    #[test]
+    fn test_config_load_creates_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = DaemonConfig {
+            sessions_dir: temp_dir.path().join("sessions"),
+            logs_dir: temp_dir.path().join("logs"),
+            socket_path: temp_dir.path().join("daemon.sock"),
+            cleanup_retention_hours: 24,
+            tmux_prefix: "summ-".to_string(),
+        };
+        assert!(config.ensure_directories().is_ok());
+        assert!(config.sessions_dir.exists());
+        assert!(config.logs_dir.exists());
+    }
+
+    #[test]
+    fn test_session_meta_path() {
+        let config = DaemonConfig::default();
+        let path = config.session_meta_path("test001");
+        assert!(path.ends_with("sessions/test001/meta.json"));
+    }
+
+    #[test]
+    fn test_session_status_path() {
+        let config = DaemonConfig::default();
+        let path = config.session_status_path("test001");
+        assert!(path.ends_with("sessions/test001/runtime/status.json"));
+    }
+
+    #[test]
+    fn test_session_workspace_path() {
+        let config = DaemonConfig::default();
+        let path = config.session_workspace_path("test001");
+        assert!(path.ends_with("sessions/test001/workspace"));
     }
 }
