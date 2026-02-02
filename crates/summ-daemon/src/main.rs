@@ -1,4 +1,5 @@
 mod init;
+mod ipc;
 mod recovery;
 mod session;
 mod tmux;
