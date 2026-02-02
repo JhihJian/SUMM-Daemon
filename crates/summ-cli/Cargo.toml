@@ -1,0 +1,17 @@
+[package]
+name = "summ-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "summ"
+path = "src/main.rs"
+
+[dependencies]
+summ-common = { path = "../summ-common" }
+clap = { version = "4.4", features = ["derive"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+dirs = { workspace = true }
