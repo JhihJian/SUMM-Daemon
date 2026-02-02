@@ -62,6 +62,16 @@ impl Daemon {
         let listener = UnixListener::bind(&self.config.socket_path)
             .context("Failed to bind to socket")?;
 
+        // Notify systemd that daemon is ready
+        #[cfg(target_os = "linux")]
+        {
+            if let Err(e) = sd_notify::notify(true, &[sd_notify::NotifyState::Ready]) {
+                info!("Failed to notify systemd: {}", e);
+            } else {
+                info!("Notified systemd of ready state");
+            }
+        }
+
         info!(
             "SUMM Daemon listening on {}",
             self.config.socket_path.display()

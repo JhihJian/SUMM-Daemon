@@ -1,0 +1,27 @@
+# SUMM Daemon - systemd user service unit
+# Install to: ~/.config/systemd/user/summ-daemon.service
+
+[Unit]
+Description=SUMM Daemon - CLI Process Management Service
+After=default.target
+Wants=default.target
+
+[Service]
+Type=notify
+ExecStart=%h/.cargo/bin/summ-daemon
+Restart=on-failure
+RestartSec=5s
+
+# Environment
+Environment="RUST_LOG=info"
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summ-daemon
+
+# Resource limits
+# LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target
