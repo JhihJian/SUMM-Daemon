@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use crate::client::send_request;
 use summ_common::{Request, Response, SessionStatus};
@@ -210,16 +212,76 @@ pub async fn cmd_status(args: StatusArgs) -> Result<()> {
     }
 }
 
-pub async fn cmd_attach(_args: AttachArgs) -> Result<()> {
-    // Placeholder - will use exec tmux in Task 4.4
-    println!("Attach command will be implemented in Task 4.4");
-    Ok(())
+pub async fn cmd_attach(args: AttachArgs) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        let tmux_session = format!("summ-{}", args.session_id);
+
+        // First verify session exists via daemon
+        let req = Request::Status {
+            session_id: args.session_id.clone(),
+        };
+        let resp = send_request(req).await?;
+
+        match resp {
+            Response::Success { .. } => {
+                // Session exists, use exec to replace current process with tmux attach
+                let err = Command::new("tmux")
+                    .args(["attach-session", "-t", &tmux_session])
+                    .exec();
+
+                // exec only returns on failure
+                Err(anyhow::anyhow!("Failed to attach to tmux session: {}", err))
+            }
+            Response::Error { code, message } => {
+                anyhow::bail!("{}: {}", code, message);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        Err(anyhow::anyhow!(
+            "attach command is only supported on Unix systems with tmux"
+        ))
+    }
 }
 
-pub async fn cmd_inject(_args: InjectArgs) -> Result<()> {
-    // Placeholder - will be fully implemented in Task 4.4
-    println!("Inject command will be implemented in Task 4.4");
-    Ok(())
+pub async fn cmd_inject(args: InjectArgs) -> Result<()> {
+    // Get message from --message or --file
+    let message = if let Some(msg) = args.message {
+        msg
+    } else if let Some(file_path) = args.file {
+        // Expand path
+        let expanded = shellexpand::full(&file_path)
+            .map_err(|e| anyhow::anyhow!("Failed to expand file path: {}", e))?;
+        let path = PathBuf::from(expanded.as_ref());
+
+        // Read file content
+        fs::read_to_string(&path)
+            .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e))?
+    } else {
+        anyhow::bail!("Either --message or --file must be provided");
+    };
+
+    let req = Request::Inject {
+        session_id: args.session_id,
+        message,
+    };
+
+    let resp = send_request(req).await?;
+
+    match resp {
+        Response::Success { data } => {
+            println!("{}", serde_json::to_string_pretty(&data)?);
+            Ok(())
+        }
+        Response::Error { code, message } => {
+            anyhow::bail!("{}: {}", code, message);
+        }
+    }
 }
 
 pub async fn cmd_daemon(args: DaemonArgs) -> Result<()> {
