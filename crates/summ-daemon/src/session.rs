@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use serde_json;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use summ_common::{CliStatus, CliState, DaemonConfig, Session, SessionStatus};
 use uuid::Uuid;
 
@@ -55,6 +55,15 @@ impl SessionExt for Session {
         // Initialize workspace from init_path
         let workspace_dir = session_dir.join("workspace");
         crate::init::initialize_workdir(&workspace_dir, init_path)?;
+
+        // Deploy CLI hooks (e.g., Claude Code hooks)
+        let runtime_dir = session_dir.join("runtime");
+        crate::hooks::deploy_cli_hooks(&workspace_dir, cli, &session_id, &runtime_dir)?;
+
+        // Install hook script on first session creation
+        if let Err(e) = crate::hooks::install_hook_script(&config.sessions_dir.join("..")) {
+            tracing::warn!("Failed to install hook script: {}", e);
+        }
 
         // Create tmux session in the workspace directory
         crate::tmux::TmuxManager::create_session(&tmux_session, &workspace_dir, cli)?;

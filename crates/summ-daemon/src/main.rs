@@ -1,4 +1,5 @@
 mod handler;
+mod hooks;
 mod init;
 mod ipc;
 mod recovery;
