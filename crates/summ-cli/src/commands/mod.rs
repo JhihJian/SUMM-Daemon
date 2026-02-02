@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 use crate::client::send_request;
-use summ_common::{Request, SessionStatus};
+use summ_common::{Request, Response, SessionStatus};
 
 /// SUMM CLI subcommands
 #[derive(Debug, Subcommand)]
@@ -123,53 +124,101 @@ pub enum DaemonSubcommand {
     Status,
 }
 
-// Command implementations (placeholders for Task 4.1, will be filled in Task 4.2+)
+// Command implementations
 
-pub async fn cmd_start(_args: StartArgs) -> Result<()> {
+pub async fn cmd_start(args: StartArgs) -> Result<()> {
+    // Expand path with shell expansion (e.g., ~, $HOME)
+    let init_path = shellexpand::full(&args.init)
+        .map_err(|e| anyhow::anyhow!("Failed to expand init path: {}", e))?;
+    let init_path = PathBuf::from(init_path.as_ref());
+
     let req = Request::Start {
-        cli: "placeholder".to_string(),
-        init: Default::default(),
-        name: None,
+        cli: args.cli,
+        init: init_path,
+        name: args.name,
     };
-    let _resp = send_request(req).await?;
-    Ok(())
+
+    let resp = send_request(req).await?;
+
+    match resp {
+        Response::Success { data } => {
+            println!("{}", serde_json::to_string_pretty(&data)?);
+            Ok(())
+        }
+        Response::Error { code, message } => {
+            anyhow::bail!("{}: {}", code, message);
+        }
+    }
 }
 
-pub async fn cmd_stop(_args: StopArgs) -> Result<()> {
+pub async fn cmd_stop(args: StopArgs) -> Result<()> {
     let req = Request::Stop {
-        session_id: "placeholder".to_string(),
+        session_id: args.session_id,
     };
-    let _resp = send_request(req).await?;
-    Ok(())
+
+    let resp = send_request(req).await?;
+
+    match resp {
+        Response::Success { data } => {
+            println!("{}", serde_json::to_string_pretty(&data)?);
+            Ok(())
+        }
+        Response::Error { code, message } => {
+            anyhow::bail!("{}: {}", code, message);
+        }
+    }
 }
 
-pub async fn cmd_list(_args: ListArgs) -> Result<()> {
-    let req = Request::List {
-        status_filter: None,
-    };
-    let _resp = send_request(req).await?;
-    Ok(())
+pub async fn cmd_list(args: ListArgs) -> Result<()> {
+    let status_filter = parse_status_filter(args.status)?;
+
+    let req = Request::List { status_filter };
+
+    let resp = send_request(req).await?;
+
+    match resp {
+        Response::Success { data } => {
+            // Try to parse as array of sessions
+            if let Some(sessions) = data.as_array() {
+                print_colored_list(sessions);
+            } else {
+                println!("{}", serde_json::to_string_pretty(&data)?);
+            }
+            Ok(())
+        }
+        Response::Error { code, message } => {
+            anyhow::bail!("{}: {}", code, message);
+        }
+    }
 }
 
-pub async fn cmd_status(_args: StatusArgs) -> Result<()> {
+pub async fn cmd_status(args: StatusArgs) -> Result<()> {
     let req = Request::Status {
-        session_id: "placeholder".to_string(),
+        session_id: args.session_id,
     };
-    let _resp = send_request(req).await?;
-    Ok(())
+
+    let resp = send_request(req).await?;
+
+    match resp {
+        Response::Success { data } => {
+            println!("{}", serde_json::to_string_pretty(&data)?);
+            Ok(())
+        }
+        Response::Error { code, message } => {
+            anyhow::bail!("{}: {}", code, message);
+        }
+    }
 }
 
 pub async fn cmd_attach(_args: AttachArgs) -> Result<()> {
     // Placeholder - will use exec tmux in Task 4.4
+    println!("Attach command will be implemented in Task 4.4");
     Ok(())
 }
 
 pub async fn cmd_inject(_args: InjectArgs) -> Result<()> {
-    let req = Request::Inject {
-        session_id: "placeholder".to_string(),
-        message: "placeholder".to_string(),
-    };
-    let _resp = send_request(req).await?;
+    // Placeholder - will be fully implemented in Task 4.4
+    println!("Inject command will be implemented in Task 4.4");
     Ok(())
 }
 
@@ -182,23 +231,22 @@ pub async fn cmd_daemon(args: DaemonArgs) -> Result<()> {
 }
 
 pub async fn cmd_daemon_start() -> Result<()> {
-    // Placeholder - will implement in Task 4.5
+    println!("Daemon start command will be implemented in Task 4.5");
     Ok(())
 }
 
 pub async fn cmd_daemon_stop() -> Result<()> {
-    // Placeholder - will implement in Task 4.5
+    println!("Daemon stop command will be implemented in Task 4.5");
     Ok(())
 }
 
 pub async fn cmd_daemon_status() -> Result<()> {
-    // Placeholder - will implement in Task 4.5
+    println!("Daemon status command will be implemented in Task 4.5");
     Ok(())
 }
 
 // Helper function to parse status filter from string
 
-#[allow(dead_code)]
 pub fn parse_status_filter(s: Option<String>) -> Result<Option<SessionStatus>> {
     match s.as_deref() {
         None => Ok(None),
@@ -206,5 +254,42 @@ pub fn parse_status_filter(s: Option<String>) -> Result<Option<SessionStatus>> {
         Some("idle") => Ok(Some(SessionStatus::Idle)),
         Some("stopped") => Ok(Some(SessionStatus::Stopped)),
         Some(other) => anyhow::bail!("Invalid status filter: {}. Use: running, idle, or stopped", other),
+    }
+}
+
+// Helper function to print colored list output
+
+fn print_colored_list(sessions: &[serde_json::Value]) {
+    use ansi_term::Colour;
+
+    if sessions.is_empty() {
+        println!("{}", Colour::Purple.dimmed().paint("No sessions found."));
+        return;
+    }
+
+    for session in sessions {
+        let session_id = session["session_id"].as_str().unwrap_or("unknown");
+        let name = session["name"].as_str().unwrap_or("");
+        let cli = session["cli"].as_str().unwrap_or("unknown");
+        let status = session["status"].as_str().unwrap_or("unknown");
+
+        let status_colored = match status {
+            "running" => Colour::Green.paint(status),
+            "idle" => Colour::Yellow.paint(status),
+            "stopped" => Colour::Red.paint(status),
+            _ => Colour::White.paint(status),
+        };
+
+        println!(
+            "{} {} {} {}",
+            Colour::Cyan.bold().paint(session_id),
+            Colour::White.dimmed().paint(format!("({})", cli)),
+            status_colored,
+            if name.is_empty() {
+                String::new()
+            } else {
+                format!("- {}", Colour::White.paint(name))
+            }
+        );
     }
 }
