@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SUMM Daemon is a CLI process management daemon service designed to manage and coordinate multiple CLI processes (called "Sessions"). It enables multi-agent collaboration by providing process lifecycle management and inter-process message injection capabilities.
 
-**Current Status**: This repository is in the specification phase. The PRD is complete (`docs/desgin/SUMM-Daemon-PRD-v1.0.md`), but no implementation code exists yet.
+**Current Status**: Implementation complete (v0.1.0). All core features implemented and tested.
 
 ## Core Architecture
 
@@ -101,3 +101,55 @@ All commands return JSON output for programmatic consumption.
 - Primary specification: `docs/desgin/SUMM-Daemon-PRD-v1.0.md` (Chinese)
 - The PRD is version 1.0, dated February 2025
 - System architecture section (Section 2) is marked as "待补充" (to be completed)
+
+## Development Guidelines
+
+### Project Hygiene
+
+**CRITICAL**: Always maintain a clean project directory. This is non-negotiable.
+
+1. **Never commit intermediate files**:
+   - Temporary test files in `/tmp/` are for local testing only
+   - Draft implementation plans should be cleaned up after execution
+   - Debug logs, crash dumps, or core files never go in the repo
+   - Build artifacts (`target/`) are already gitignored
+
+2. **Keep working tree clean**:
+   - Before pushing: `git status` should show "nothing to commit"
+   - Untracked files must be evaluated: either add to `.gitignore` or remove
+   - No files like `*.bak`, `*.tmp`, `~*`, `.DS_Store` in the repository
+
+3. **Documentation discipline**:
+   - Update `CHANGELOG.md` with every significant change
+   - Update `README.md` when adding/removing features or commands
+   - Keep implementation plans in `docs/plans/` but remove outdated drafts
+   - Delete completed task lists and scratch notes
+
+4. **Before committing**:
+   ```bash
+   git status          # Must be clean or only contain intended changes
+   git diff            # Review all changes
+   cargo test --workspace  # All tests must pass
+   ```
+
+5. **Allowed in repository**:
+   - Source code
+   - Documentation (README, guides, specifications)
+   - Configuration files (Cargo.toml, .gitignore)
+   - Tests and test fixtures
+   - Build scripts (install.sh, uninstall.sh)
+   - System integration files (systemd unit)
+
+6. **Never allowed in repository**:
+   - Intermediate build artifacts
+   - Temporary test scripts used once
+   - Local configuration files (settings.local.json, .env)
+   - Debug logs or output files
+   - Draft or brainstorming notes (keep in external docs)
+
+### Git Commit Standards
+
+- Write clear, descriptive commit messages
+- One feature/task per commit
+- Squash fix-up commits before pushing
+- Keep commit history clean and readable
